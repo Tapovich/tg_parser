@@ -9,6 +9,11 @@ services:
     restart: always
     environment:
       - TZ=UTC
+      # Explicitly disable proxies for the bot
+      - HTTP_PROXY=
+      - HTTPS_PROXY=
+      - http_proxy=
+      - https_proxy=
     logging:
       driver: "json-file"
       options:

@@ -31,6 +31,15 @@ class ContentMonitor:
         self.last_check = {}
         self.bot_instance = None
         
+    async def safe_send_message(self, chat_id: int, text: str, parse_mode: str = "HTML"):
+        """Безопасная отправка сообщения"""
+        message_params = {
+            'chat_id': chat_id,
+            'text': text,
+            'parse_mode': parse_mode
+        }
+        await self.bot_instance.send_message(**message_params)
+        
     def set_bot_instance(self, bot_instance):
         """Устанавливает экземпляр бота для отправки уведомлений"""
         self.bot_instance = bot_instance

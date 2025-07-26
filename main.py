@@ -31,7 +31,9 @@ async def main():
         
                 # Создаем бот и диспетчер
         global bot_instance
-        bot = Bot(token=config.BOT_TOKEN)
+        
+        # Создаем бота с явными параметрами
+        bot = Bot(token=config.BOT_TOKEN, parse_mode="HTML")
         bot_instance = bot
         dp = Dispatcher(storage=MemoryStorage())
         
