@@ -11,10 +11,11 @@ import asyncio
 
 logger = logging.getLogger(__name__)
 
-# Инициализация OpenAI
+# Инициализация OpenAI без параметра proxies
 client = None
 if config.OPENAI_API_KEY:
-    client = openai.OpenAI(api_key="sk-...")
+    # Важно: не передавать proxies ни явно, ни неявно!
+    client = openai.OpenAI(api_key=config.OPENAI_API_KEY)
 
 
 
