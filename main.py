@@ -29,11 +29,23 @@ async def main():
         await db.init_db()
         logger.info("База данных инициализирована")
         
-                # Создаем бот и диспетчер
+        # Создаем бот и диспетчер
         global bot_instance
         
-        # Создаем бота с явными параметрами
-        bot = Bot(token=config.BOT_TOKEN, parse_mode="HTML")
+        # Создаем бота с минимальными параметрами, исключая любые прокси
+        bot = Bot(
+            token=config.BOT_TOKEN, 
+            parse_mode="HTML"
+        )
+        
+        # Проверяем, что бот создался корректно
+        try:
+            bot_info = await bot.get_me()
+            logger.info(f"Бот успешно инициализирован: @{bot_info.username}")
+        except Exception as e:
+            logger.error(f"Ошибка инициализации бота: {e}")
+            raise
+        
         bot_instance = bot
         dp = Dispatcher(storage=MemoryStorage())
         

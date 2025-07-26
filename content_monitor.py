@@ -305,6 +305,12 @@ class ContentMonitor:
         try:
             from emoji_config import get_emoji, safe_html_with_emoji
             from keyboards import get_new_post_keyboard
+            
+            # Проверяем, что бот доступен
+            if not bot:
+                logger.error("Бот не доступен для отправки сообщения")
+                return
+                
             safe_text = post_data['original_text']
             safe_source = safe_html_with_emoji(post_data.get('source_name', 'Неизвестно'))
             safe_url = safe_html_with_emoji(post_data.get('source_url', ''))
@@ -333,15 +339,25 @@ class ContentMonitor:
                 for suggestion in list(suggestions.values())[:3]:
                     message_text += f"• {suggestion}\n"
             message_text += f"\n⚡ Выберите действие:"
-            await bot.send_message(
-                chat_id=admin_id,
-                text=message_text,
-                parse_mode="HTML",
-                reply_markup=get_new_post_keyboard(post_data['id'])
-            )
+            
+            # Явно указываем только необходимые параметры
+            message_params = {
+                'chat_id': admin_id,
+                'text': message_text,
+                'parse_mode': "HTML",
+                'reply_markup': get_new_post_keyboard(post_data['id'])
+            }
+            
+            # Логируем параметры для отладки
+            logger.debug(f"Отправляем сообщение с параметрами: {list(message_params.keys())}")
+            
+            await bot.send_message(**message_params)
             logger.info(f"Новый пост отправлен админу: {post_data['id']}")
         except Exception as e:
             logger.error(f"Ошибка отправки поста админу: {e}")
+            # Дополнительная отладочная информация
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
 
     async def _notify_admin_about_new_post(self, draft_id: int):
         """Уведомляет всех админов о новом найденном посте"""
