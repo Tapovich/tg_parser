@@ -1,11 +1,26 @@
+# Git
 .git
 .gitignore
-.env
-__pycache__
+
+# Python
+__pycache__/
 *.pyc
-data/
-*.db
+*.pyo
+*.pyd
+
+# IDE
+.idea/
+.vscode/
+
+# OS
 .DS_Store
-README.md
-Dockerfile
-docker-compose.yml 
+Thumbs.db
+
+# Logs
+*.log
+
+# Keep these files
+!requirements.txt
+!bot.db
+!content_monitor_session.session
+!content_monitor_session.session-journal
