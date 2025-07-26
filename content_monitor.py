@@ -27,7 +27,7 @@ class ContentMonitor:
     def __init__(self):
         self.session = None
         self.tg_client = None
-        # self.keywords = config.KEYWORDS
+        self.keywords = config.KEYWORDS
         self.last_check = {}
         self.bot_instance = None
         

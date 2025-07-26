@@ -31,7 +31,7 @@ async def main():
         
         # Создаем бот и диспетчер
         global bot_instance
-        bot = Bot(token=config.BOT_TOKEN)
+        bot = Bot(token=config.BOT_TOKEN, proxy=None)  # явно отключаем прокси
         bot_instance = bot
         dp = Dispatcher(storage=MemoryStorage())
         
