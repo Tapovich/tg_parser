@@ -29,9 +29,9 @@ async def main():
         await db.init_db()
         logger.info("База данных инициализирована")
         
-        # Создаем бот и диспетчер
+                # Создаем бот и диспетчер
         global bot_instance
-        bot = Bot(token=config.BOT_TOKEN, proxy=None)  # явно отключаем прокси
+        bot = Bot(token=config.BOT_TOKEN)
         bot_instance = bot
         dp = Dispatcher(storage=MemoryStorage())
         
