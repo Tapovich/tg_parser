@@ -21,8 +21,6 @@ from states import ContentModerationStates, AdminStates
 from scheduler import scheduler
 from aiogram import Bot
 from emoji_config import add_emojis_to_post, apply_template, get_emoji, get_random_emoji, safe_html_with_emoji, get_emoji_with_fallback, FALLBACK_EMOJIS
-from content_rewriter import rewrite_post
-from chatgpt_integration import chatgpt_rewriter, rewrite_post_with_ai, get_manual_rewrite_prompt, READY_PROMPTS
 
 router = Router()
 
@@ -2242,10 +2240,10 @@ async def handle_manual_rewrite(message: Message, state: FSMContext):
     original_text = message.text
     
     # Получаем советы что нужно улучшить
-    suggestions = chatgpt_rewriter.get_rewrite_suggestions(original_text)
+    # suggestions = chatgpt_rewriter.get_rewrite_suggestions(original_text)
     
     # Определяем тип контента
-    content_type = chatgpt_rewriter._detect_content_type(original_text)
+    # content_type = chatgpt_rewriter._detect_content_type(original_text)
     type_names = {
         "news": "📰 Новость",
         "update": "🔄 Обновление", 
@@ -2416,10 +2414,10 @@ async def cmd_ai_settings(message: Message):
     await safe_edit_message(message,
         f"{settings_emoji} <b>Настройки AI перефразирования</b>\n\n"
         f"🤖 <b>ChatGPT API:</b> {openai_status}\n"
-        f"🎯 <b>Стиль канала:</b> {chatgpt_rewriter.channel_style['theme']}\n"
-        f"📝 <b>Тон:</b> {chatgpt_rewriter.channel_style['tone']}\n"
-        f"👥 <b>Аудитория:</b> {chatgpt_rewriter.channel_style['audience']}\n"
-        f"📏 <b>Длина постов:</b> {chatgpt_rewriter.channel_style['length']}\n\n"
+        # f"🎯 <b>Стиль канала:</b> {chatgpt_rewriter.channel_style['theme']}\n"
+        # f"📝 <b>Тон:</b> {chatgpt_rewriter.channel_style['tone']}\n"
+        # f"👥 <b>Аудитория:</b> {chatgpt_rewriter.channel_style['audience']}\n"
+        # f"📏 <b>Длина постов:</b> {chatgpt_rewriter.channel_style['length']}\n\n"
         f"⚡ <b>Доступные команды:</b>\n"
         f"• /manual - ручное перефразирование с советами\n"
         f"• /chatgpt - демо автоматического перефразирования\n"
@@ -2455,9 +2453,9 @@ async def callback_new_post_analysis(callback: CallbackQuery):
         await callback.answer("❌ Пост не найден", show_alert=True)
         return
     
-    # Получаем детальный анализ
-    suggestions = chatgpt_rewriter.get_rewrite_suggestions(draft['original_text'])
-    content_type = chatgpt_rewriter._detect_content_type(draft['original_text'])
+    # # Получаем детальный анализ
+    # suggestions = chatgpt_rewriter.get_rewrite_suggestions(draft['original_text'])
+    # content_type = chatgpt_rewriter._detect_content_type(draft['original_text'])
     
     type_names = {
         "news": "📰 Новость",
@@ -2518,8 +2516,8 @@ async def callback_new_post_manual(callback: CallbackQuery):
         return
     
     # Получаем советы и анализ
-    suggestions = chatgpt_rewriter.get_rewrite_suggestions(draft['original_text'])
-    content_type = chatgpt_rewriter._detect_content_type(draft['original_text'])
+    # suggestions = chatgpt_rewriter.get_rewrite_suggestions(draft['original_text'])
+    # content_type = chatgpt_rewriter._detect_content_type(draft['original_text'])
     
     type_names = {
         "news": "📰 Новость",
@@ -2602,8 +2600,8 @@ async def callback_new_post_details(callback: CallbackQuery):
     details_text += f"\n📝 <b>Полный текст:</b>\n<i>{safe_html_with_emoji(draft['original_text'])}</i>\n\n"
     
     # Технический анализ
-    content_type = chatgpt_rewriter._detect_content_type(draft['original_text'])
-    suggestions = chatgpt_rewriter.get_rewrite_suggestions(draft['original_text'])
+    # content_type = chatgpt_rewriter._detect_content_type(draft['original_text'])
+    # suggestions = chatgpt_rewriter.get_rewrite_suggestions(draft['original_text'])
     
     details_text += f"🎯 <b>Тип контента:</b> {content_type}\n"
     details_text += f"📊 <b>Символов:</b> {len(draft['original_text'])}\n"
@@ -2656,7 +2654,7 @@ async def cmd_test_clean(message: Message):
     )
     
     # Очищаем текст
-    cleaned_text = chatgpt_rewriter.clean_source_text(problematic_text)
+    # cleaned_text = chatgpt_rewriter.clean_source_text(problematic_text)
     
     await message.answer(
         f"✨ <b>ОЧИЩЕННЫЙ текст:</b>\n\n"
@@ -2679,7 +2677,7 @@ async def cmd_test_clean(message: Message):
         
         try:
             # Перефразируем через ChatGPT
-            rewritten = await chatgpt_rewriter.rewrite_with_chatgpt(problematic_text)
+            # rewritten = await chatgpt_rewriter.rewrite_with_chatgpt(problematic_text)
             
             if rewritten:
                 await message.answer(
