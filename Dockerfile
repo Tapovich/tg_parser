@@ -21,7 +21,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Создание volume для базы данных
-VOLUME ["/app/data"]
+# VOLUME ["/app/data"]
 
 # Запуск бота
 CMD ["python", "main.py"] 
