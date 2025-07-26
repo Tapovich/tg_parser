@@ -600,13 +600,16 @@ class ContentMonitor:
                 summary += f"• [{date_str}] {draft['text']}\n"
             summary += f"\nВсего найдено: {len(new_drafts)}"
             
+            # Use Bot instance carefully without any proxy settings
             for user_id in config.ADMIN_USERS:
                 try:
-                    await self.bot_instance.send_message(
-                        chat_id=user_id,
-                        text=summary,
-                        parse_mode="HTML"
-                    )
+                    # Make sure to use only the required parameters
+                    message_params = {
+                        'chat_id': user_id,
+                        'text': summary,
+                        'parse_mode': "HTML"
+                    }
+                    await self.bot_instance.send_message(**message_params)
                 except Exception as e:
                     logger.error(f"Ошибка отправки уведомления пользователю {user_id}: {e}")
         
@@ -671,7 +674,7 @@ class ContentMonitor:
                     'date': post_date.isoformat()
                 })
         
-        # Отправляем уведомление только если есть новые посты
+            # Отправляем уведомление только если есть новые посты
         if new_drafts and self.bot_instance:
             summary = f"📊 <b>Новые записи из {feed_url}:</b>\n\n"
             for draft in new_drafts:
@@ -679,17 +682,18 @@ class ContentMonitor:
                 summary += f"• [{date_str}] {draft['text']}\n"
             summary += f"\nВсего найдено: {len(new_drafts)}"
             
+            # Use Bot instance carefully without any proxy settings
             for user_id in config.ADMIN_USERS:
                 try:
-                    await self.bot_instance.send_message(
-                        chat_id=user_id,
-                        text=summary,
-                        parse_mode="HTML"
-                    )
+                    # Make sure to use only the required parameters
+                    message_params = {
+                        'chat_id': user_id,
+                        'text': summary,
+                        'parse_mode': "HTML"
+                    }
+                    await self.bot_instance.send_message(**message_params)
                 except Exception as e:
                     logger.error(f"Ошибка отправки уведомления пользователю {user_id}: {e}")
         
-        return new_drafts
-
-# Глобальный экземпляр мониторинга
+        return new_drafts# Глобальный экземпляр мониторинга
 content_monitor = ContentMonitor() 
