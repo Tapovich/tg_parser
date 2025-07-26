@@ -45,7 +45,6 @@ ENV/
 *.sqlite
 
 # Telethon session files
-*.session
 *.session-journal
 
 # Other
