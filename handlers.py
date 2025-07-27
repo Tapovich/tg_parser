@@ -3251,3 +3251,145 @@ async def cmd_bot_status(message: Message):
     except Exception as e:
         logger.error(f"Ошибка получения статуса: {e}")
         await message.answer(f"❌ Ошибка: {e}")
+
+@router.message(Command("force_monitor"))
+async def cmd_force_monitor(message: Message):
+    """Принудительный запуск мониторинга с подробной диагностикой"""
+    if not is_admin(message.from_user.id):
+        await message.answer("❌ У вас нет прав доступа.")
+        return
+    
+    try:
+        from content_monitor import content_monitor
+        
+        # Проверяем статус content_monitor
+        status_text = "🔍 <b>Принудительный мониторинг</b>\n\n"
+        
+        # Проверяем бота
+        if content_monitor.bot_instance:
+            status_text += "✅ Бот доступен\n"
+        else:
+            status_text += "❌ Бот НЕ доступен!\n"
+            await message.answer(status_text, parse_mode="HTML")
+            return
+        
+        # Проверяем Telethon
+        if content_monitor.tg_client:
+            status_text += "✅ Telethon клиент доступен\n"
+        else:
+            status_text += "❌ Telethon клиент НЕ доступен\n"
+        
+        # Проверяем ключевые слова
+        keywords_count = len(content_monitor.keywords)
+        status_text += f"✅ Ключевых слов: {keywords_count}\n"
+        
+        # Проверяем каналы
+        channels_count = len(config.TG_CHANNELS)
+        status_text += f"✅ Telegram каналов: {channels_count}\n"
+        
+        # Проверяем RSS
+        rss_count = len(config.RSS_SOURCES)
+        status_text += f"✅ RSS источников: {rss_count}\n\n"
+        
+        await message.answer(status_text, parse_mode="HTML")
+        
+        # Запускаем мониторинг
+        await message.answer("🔄 <b>Запускаю мониторинг...</b>", parse_mode="HTML")
+        
+        # Сбрасываем время проверки для всех источников
+        for channel in config.TG_CHANNELS:
+            await db.set_setting(f"last_check_tg_{channel}", 
+                               (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat())
+        
+        for rss_url in config.RSS_SOURCES:
+            await db.set_setting(f"last_check_rss_{rss_url}", 
+                               (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat())
+        
+        await message.answer("⏰ <b>Время проверки сброшено на 48 часов назад</b>", parse_mode="HTML")
+        
+        # Запускаем мониторинг
+        await content_monitor.run_monitoring_cycle()
+        
+        await message.answer("✅ <b>Мониторинг завершен!</b>\n\nПроверьте логи для подробной информации.", parse_mode="HTML")
+        
+    except Exception as e:
+        logger.error(f"Ошибка принудительного мониторинга: {e}")
+        await message.answer(f"❌ Ошибка: {e}")
+
+@router.message(Command("check_channel"))
+async def cmd_check_channel(message: Message):
+    """Проверяет конкретный канал на наличие новых постов"""
+    if not is_admin(message.from_user.id):
+        await message.answer("❌ У вас нет прав доступа.")
+        return
+    
+    args = message.text.split(maxsplit=1)
+    if len(args) < 2:
+        await message.answer("⚠️ Укажите канал: /check_channel @channel_name")
+        return
+    
+    channel = args[1].strip()
+    if not channel.startswith('@'):
+        channel = '@' + channel
+    
+    try:
+        from content_monitor import content_monitor
+        
+        if not content_monitor.tg_client:
+            await message.answer("❌ Telethon клиент не инициализирован")
+            return
+        
+        await message.answer(f"🔍 <b>Проверяю канал {channel}...</b>", parse_mode="HTML")
+        
+        # Получаем время последней проверки
+        last_check_time = await content_monitor._get_last_check_time(f"tg_{channel}")
+        if not last_check_time:
+            last_check_time = datetime.now(timezone.utc) - timedelta(hours=24)
+        
+        await message.answer(f"⏰ <b>Время последней проверки:</b> {last_check_time}", parse_mode="HTML")
+        
+        # Получаем сообщения
+        entity = await content_monitor.tg_client.get_entity(channel)
+        messages = await content_monitor.tg_client.get_messages(
+            entity, 
+            limit=20,
+            offset_date=last_check_time
+        )
+        
+        await message.answer(f"📊 <b>Найдено {len(messages)} сообщений</b>", parse_mode="HTML")
+        
+        new_messages = 0
+        matched_messages = 0
+        
+        for message in reversed(messages):
+            if not message.text:
+                continue
+            
+            if message.date <= last_check_time:
+                continue
+            
+            new_messages += 1
+            
+            # Проверяем ключевые слова
+            matched_keywords = content_monitor.check_keywords(message.text)
+            if matched_keywords:
+                matched_messages += 1
+                await message.answer(
+                    f"🎯 <b>Найден релевантный пост:</b>\n\n"
+                    f"📅 {message.date}\n"
+                    f"🔍 Ключевые слова: {', '.join(matched_keywords)}\n"
+                    f"📝 {message.text[:200]}...",
+                    parse_mode="HTML"
+                )
+        
+        await message.answer(
+            f"📈 <b>Результат проверки канала {channel}:</b>\n\n"
+            f"• Новых сообщений: {new_messages}\n"
+            f"• Релевантных постов: {matched_messages}\n"
+            f"• Время проверки: {last_check_time}",
+            parse_mode="HTML"
+        )
+        
+    except Exception as e:
+        logger.error(f"Ошибка проверки канала {channel}: {e}")
+        await message.answer(f"❌ Ошибка: {e}")
