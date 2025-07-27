@@ -6,7 +6,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import InlineKeyboardButton
 from aiogram.utils.markdown import html_decoration as html
 from aiogram.exceptions import TelegramBadRequest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import html as html_escape
 import logging
 import os
@@ -207,7 +207,7 @@ async def callback_approve_post(callback: CallbackQuery):
             f"{warning_emoji} <b>Пост уже опубликован ранее</b>\n\n"
             f"{success_emoji} Статус: Опубликован\n"
             f"{channel_emoji} Канал: {config.CHANNEL_ID}\n"
-            f"{time_emoji} {datetime.now().strftime('%d.%m.%Y %H:%M')}",
+            f"{time_emoji} {datetime.now(timezone.utc).strftime('%d.%m.%Y %H:%M')}",
             parse_mode="HTML"
         )
         return
@@ -435,7 +435,7 @@ async def cmd_setup(message: Message):
         source_name='Демо источник',
         original_text=demo_text_with_emoji,
         source_url='https://example.com/demo',
-        source_date=datetime.now().isoformat(),
+        source_date=datetime.now(timezone.utc).isoformat(),
         keywords_matched=['Telegram', 'TON', 'NFT', 'подарки', 'криптовалюта']
     )
     
@@ -2833,7 +2833,7 @@ async def cmd_demo_post_notification(message: Message):
         source_name='Демо источник - тест уведомлений',
         original_text=demo_text,
         source_url='https://example.com/demo-partnership',
-        source_date=datetime.now().isoformat(),
+        source_date=datetime.now(timezone.utc).isoformat(),
         keywords_matched=['TON', 'партнерство', 'биржа', 'ликвидность']
     )
     
@@ -3090,7 +3090,7 @@ async def cmd_reset_checks(message: Message):
             return
         
         # Сбрасываем все времена проверки
-        reset_time = (datetime.now() - timedelta(hours=24)).isoformat()
+        reset_time = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
         for (key,) in check_keys:
             await db.set_setting(key, reset_time)
         
@@ -3128,7 +3128,7 @@ async def cmd_check_times(message: Message):
         for key, value in check_times:
             try:
                 check_time = datetime.fromisoformat(value)
-                time_ago = datetime.now() - check_time
+                time_ago = datetime.now(timezone.utc) - check_time
                 
                 # Определяем тип источника
                 if key.startswith("last_check_rss_"):

@@ -242,17 +242,23 @@ class ContentMonitor:
             # Получаем время последней проверки из базы данных
             last_check_time = await self._get_last_check_time(f"rss_{rss_url}")
             if not last_check_time:
-                # Если нет записи в БД, берем время 24 часа назад
-                last_check_time = datetime.now() - timedelta(hours=24)
+                # Если нет записи в БД, берем время 24 часа назад с UTC
+                last_check_time = datetime.now(timezone.utc) - timedelta(hours=24)
+            else:
+                # Убеждаемся, что last_check_time имеет часовой пояс
+                if last_check_time.tzinfo is None:
+                    last_check_time = last_check_time.replace(tzinfo=timezone.utc)
             
             new_entries = 0
             for entry in feed.entries:
                 try:
                     pub_date = None
                     if hasattr(entry, 'published_parsed') and entry.published_parsed:
-                        pub_date = datetime(*entry.published_parsed[:6])
+                        # Создаем datetime с UTC
+                        pub_date = datetime(*entry.published_parsed[:6], tzinfo=timezone.utc)
                     elif hasattr(entry, 'updated_parsed') and entry.updated_parsed:
-                        pub_date = datetime(*entry.updated_parsed[:6])
+                        # Создаем datetime с UTC
+                        pub_date = datetime(*entry.updated_parsed[:6], tzinfo=timezone.utc)
                     
                     # Пропускаем старые записи
                     if pub_date and pub_date <= last_check_time:
@@ -308,8 +314,12 @@ class ContentMonitor:
             # Получаем время последней проверки из базы данных
             last_check_time = await self._get_last_check_time(f"tg_{channel}")
             if not last_check_time:
-                # Если нет записи в БД, берем время 24 часа назад
-                last_check_time = datetime.now() - timedelta(hours=24)
+                # Если нет записи в БД, берем время 24 часа назад с UTC
+                last_check_time = datetime.now(timezone.utc) - timedelta(hours=24)
+            else:
+                # Убеждаемся, что last_check_time имеет часовой пояс
+                if last_check_time.tzinfo is None:
+                    last_check_time = last_check_time.replace(tzinfo=timezone.utc)
             
             messages = await self.tg_client.get_messages(
                 entity, 
@@ -324,6 +334,7 @@ class ContentMonitor:
                         continue
                     
                     # Проверяем, что сообщение действительно новое
+                    # message.date уже имеет часовой пояс от Telethon
                     if message.date <= last_check_time:
                         continue
                     
@@ -359,7 +370,11 @@ class ContentMonitor:
             # Получаем из БД время последней проверки
             result = await db.get_setting(f"last_check_{source_key}")
             if result:
-                return datetime.fromisoformat(result)
+                dt = datetime.fromisoformat(result)
+                # Убеждаемся, что datetime имеет часовой пояс
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                return dt
         except Exception as e:
             logger.error(f"Ошибка получения времени последней проверки: {e}")
         return None
@@ -367,7 +382,9 @@ class ContentMonitor:
     async def _update_last_check_time(self, source_key: str):
         """Обновляет время последней проверки в базе данных"""
         try:
-            await db.set_setting(f"last_check_{source_key}", datetime.now().isoformat())
+            # Сохраняем время с UTC
+            current_time = datetime.now(timezone.utc)
+            await db.set_setting(f"last_check_{source_key}", current_time.isoformat())
         except Exception as e:
             logger.error(f"Ошибка обновления времени последней проверки: {e}")
     
