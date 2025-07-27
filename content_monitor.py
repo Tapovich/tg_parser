@@ -332,45 +332,90 @@ class ContentMonitor:
             except Exception as e:
                 logger.error(f"Ошибка обработки канала {channel}: {e}")
     
+    async def _get_last_check_time(self, source_key: str) -> Optional[datetime]:
+        """Получает время последней проверки из базы данных"""
+        try:
+            # Получаем из БД время последней проверки
+            result = await db.get_setting(f"last_check_{source_key}")
+            if result:
+                dt = datetime.fromisoformat(result)
+                # Убеждаемся, что datetime имеет часовой пояс
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                return dt
+        except Exception as e:
+            logger.error(f"Ошибка получения времени последней проверки: {e}")
+        return None
+    
+    async def _update_last_check_time(self, source_key: str):
+        """Обновляет время последней проверки в базе данных"""
+        try:
+            # Сохраняем время с UTC
+            current_time = datetime.now(timezone.utc)
+            await db.set_setting(f"last_check_{source_key}", current_time.isoformat())
+        except Exception as e:
+            logger.error(f"Ошибка обновления времени последней проверки: {e}")
+    
+    async def _get_last_message_id(self, source_key: str) -> Optional[int]:
+        """Получает ID последнего обработанного сообщения из базы данных"""
+        try:
+            result = await db.get_setting(f"last_message_id_{source_key}")
+            if result:
+                return int(result)
+        except Exception as e:
+            logger.error(f"Ошибка получения ID последнего сообщения: {e}")
+        return None
+    
+    async def _update_last_message_id(self, source_key: str, message_id: int):
+        """Обновляет ID последнего обработанного сообщения в базе данных"""
+        try:
+            await db.set_setting(f"last_message_id_{source_key}", str(message_id))
+        except Exception as e:
+            logger.error(f"Ошибка обновления ID последнего сообщения: {e}")
+    
     async def _process_telegram_channel(self, channel: str):
-        """Обрабатывает один Telegram канал"""
+        """Обрабатывает один Telegram канал по ID сообщений"""
         try:
             entity = await self.tg_client.get_entity(channel)
             
-            # Получаем время последней проверки из базы данных
-            last_check_time = await self._get_last_check_time(f"tg_{channel}")
-            if not last_check_time:
-                # Если нет записи в БД, берем время 24 часа назад с UTC
-                last_check_time = datetime.now(timezone.utc) - timedelta(hours=24)
-                logger.info(f"Канал {channel}: нет записи в БД, берем время {last_check_time}")
-            else:
-                # Убеждаемся, что last_check_time имеет часовой пояс
-                if last_check_time.tzinfo is None:
-                    last_check_time = last_check_time.replace(tzinfo=timezone.utc)
-                
-                # Добавляем буфер времени для компенсации разницы часовых поясов
-                # Отнимаем 6 часов от времени последней проверки, чтобы захватить больше сообщений
-                last_check_time = last_check_time - timedelta(hours=6)
-                logger.info(f"Канал {channel}: время последней проверки {last_check_time} (с буфером -6ч)")
+            # Получаем ID последнего обработанного сообщения
+            last_message_id = await self._get_last_message_id(f"tg_{channel}")
+            logger.info(f"Канал {channel}: последний ID сообщения {last_message_id}")
             
+            # Получаем последние сообщения (больше лимит для надежности)
             messages = await self.tg_client.get_messages(
                 entity, 
-                limit=50,
-                offset_date=last_check_time
+                limit=100  # Увеличиваем лимит для захвата большего количества сообщений
             )
+            
+            if not messages:
+                logger.info(f"Канал {channel}: нет сообщений")
+                return
+                
             logger.info(f"Обрабатываем канал {channel}: {len(messages)} сообщений")
+            
+            # Сортируем сообщения по ID (новые первыми)
+            messages.sort(key=lambda m: m.id, reverse=True)
+            
             new_entries = 0
-            for message in reversed(messages):
+            processed_messages = []
+            
+            for message in messages:
                 try:
                     if not message.text:
                         logger.debug(f"Пропускаем сообщение без текста: {message.id}")
                         continue
                     
-                    # Проверяем, что сообщение действительно новое
-                    # message.date уже имеет часовой пояс от Telethon
-                    if message.date <= last_check_time:
-                        logger.debug(f"Пропускаем старое сообщение {message.id}: {message.date} <= {last_check_time}")
-                        continue
+                    # Если это первая проверка (last_message_id = None), обрабатываем только последние 10 сообщений
+                    if last_message_id is None:
+                        if len(processed_messages) >= 10:
+                            logger.debug(f"Пропускаем старые сообщения при первой проверке: {message.id}")
+                            continue
+                    else:
+                        # Пропускаем сообщения с ID меньше или равным последнему обработанному
+                        if message.id <= last_message_id:
+                            logger.debug(f"Пропускаем уже обработанное сообщение {message.id} <= {last_message_id}")
+                            continue
                     
                     logger.debug(f"Обрабатываем новое сообщение {message.id}: {message.date}")
                     matched_keywords = self.check_keywords(message.text)
@@ -402,40 +447,23 @@ class ContentMonitor:
                             logger.warning(f"Бот не доступен для уведомления о посте #{draft_id}")
                     else:
                         logger.debug(f"Сообщение {message.id} не содержит ключевых слов")
+                    
+                    # Записываем ID для обновления
+                    processed_messages.append(message.id)
                         
                 except Exception as e:
                     logger.error(f"Ошибка обработки сообщения: {e}")
                     continue
             
-            # Обновляем время последней проверки в БД
-            await self._update_last_check_time(f"tg_{channel}")
+            # Обновляем ID последнего обработанного сообщения
+            if processed_messages:
+                max_id = max(processed_messages)
+                await self._update_last_message_id(f"tg_{channel}", max_id)
+                logger.info(f"Канал {channel}: обновлен ID последнего сообщения до {max_id}")
+            
             logger.info(f"Канал {channel}: добавлено {new_entries} новых записей")
         except Exception as e:
             logger.error(f"Ошибка обработки канала {channel}: {e}")
-    
-    async def _get_last_check_time(self, source_key: str) -> Optional[datetime]:
-        """Получает время последней проверки из базы данных"""
-        try:
-            # Получаем из БД время последней проверки
-            result = await db.get_setting(f"last_check_{source_key}")
-            if result:
-                dt = datetime.fromisoformat(result)
-                # Убеждаемся, что datetime имеет часовой пояс
-                if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=timezone.utc)
-                return dt
-        except Exception as e:
-            logger.error(f"Ошибка получения времени последней проверки: {e}")
-        return None
-    
-    async def _update_last_check_time(self, source_key: str):
-        """Обновляет время последней проверки в базе данных"""
-        try:
-            # Сохраняем время с UTC
-            current_time = datetime.now(timezone.utc)
-            await db.set_setting(f"last_check_{source_key}", current_time.isoformat())
-        except Exception as e:
-            logger.error(f"Ошибка обновления времени последней проверки: {e}")
     
     async def run_monitoring_cycle(self):
         """Запускает полный цикл мониторинга"""

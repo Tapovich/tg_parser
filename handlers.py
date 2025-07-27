@@ -3075,98 +3075,86 @@ async def cmd_all_stats(message: Message):
 
 @router.message(Command("reset_checks"))
 async def cmd_reset_checks(message: Message):
-    """Сбрасывает время последней проверки всех источников"""
+    """Сбрасывает время проверки и ID сообщений для всех источников"""
     if not is_admin(message.from_user.id):
-        await message.answer("❌ У вас нет прав для выполнения этой команды.")
+        await message.answer("❌ У вас нет прав доступа.")
         return
     
     try:
-        # Получаем все настройки, связанные с проверками
-        async with aiosqlite.connect(db.db_path) as conn:
-            cursor = await conn.execute(
-                'SELECT key FROM settings WHERE key LIKE "last_check_%"'
-            )
-            check_keys = await cursor.fetchall()
+        from content_monitor import content_monitor
         
-        if not check_keys:
-            await message.answer("ℹ️ Нет сохраненных данных о времени проверки.")
-            return
+        status_text = "🔄 <b>Сброс проверок</b>\n\n"
         
-        # Сбрасываем все времена проверки
-        reset_time = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
-        for (key,) in check_keys:
-            await db.set_setting(key, reset_time)
+        # Сбрасываем время проверки для всех источников
+        for channel in config.TG_CHANNELS:
+            await db.set_setting(f"last_check_tg_{channel}", 
+                               (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat())
+            # Сбрасываем ID сообщений для Telegram
+            await db.set_setting(f"last_message_id_tg_{channel}", "")
         
-        await message.answer(
-            f"✅ Время последней проверки сброшено для {len(check_keys)} источников.\n"
-            f"Теперь бот будет проверять посты за последние 24 часа."
-        )
+        for rss_url in config.RSS_SOURCES:
+            await db.set_setting(f"last_check_rss_{rss_url}", 
+                               (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat())
+        
+        status_text += f"\n✅ <b>Все проверки сброшены!</b>\n\n"
+        status_text += "Теперь бот будет проверять:\n"
+        status_text += "• Telegram: последние 10 сообщений (при первой проверке)\n"
+        status_text += "• RSS: последние 48 часов\n\n"
+        status_text += "Используйте /force_monitor для запуска проверки"
+        
+        await message.answer(status_text, parse_mode="HTML")
         
     except Exception as e:
-        logger.error(f"Ошибка сброса времени проверки: {e}")
-        await message.answer("❌ Ошибка при сбросе времени проверки.")
+        logger.error(f"Ошибка сброса проверок: {e}")
+        await message.answer(f"❌ Ошибка: {e}")
 
 @router.message(Command("check_times"))
 async def cmd_check_times(message: Message):
-    """Показывает время последней проверки всех источников"""
+    """Показывает время последней проверки и ID сообщений"""
     if not is_admin(message.from_user.id):
-        await message.answer("❌ У вас нет прав для выполнения этой команды.")
+        await message.answer("❌ У вас нет прав доступа.")
         return
     
     try:
-        # Получаем все настройки, связанные с проверками
-        async with aiosqlite.connect(db.db_path) as conn:
-            cursor = await conn.execute(
-                'SELECT key, value FROM settings WHERE key LIKE "last_check_%" ORDER BY key'
-            )
-            check_times = await cursor.fetchall()
+        from content_monitor import content_monitor
         
-        if not check_times:
-            await message.answer("ℹ️ Нет данных о времени проверки источников.")
-            return
+        status_text = "⏰ <b>Статус проверок</b>\n\n"
         
-        # Формируем отчет
-        report = "📊 <b>Время последней проверки источников:</b>\n\n"
+        # Проверяем несколько каналов
+        test_channels = ['@durov', '@telegram', '@toncoin']
+        status_text += "📱 <b>Telegram каналы:</b>\n"
         
-        for key, value in check_times:
-            try:
-                check_time = datetime.fromisoformat(value)
-                time_ago = datetime.now(timezone.utc) - check_time
-                
-                # Определяем тип источника
-                if key.startswith("last_check_rss_"):
-                    source_type = "📡 RSS"
-                    source_name = key.replace("last_check_rss_", "")
-                elif key.startswith("last_check_tg_"):
-                    source_type = "💬 Telegram"
-                    source_name = key.replace("last_check_tg_", "")
-                else:
-                    source_type = "❓ Неизвестно"
-                    source_name = key.replace("last_check_", "")
-                
-                # Форматируем время
-                if time_ago.total_seconds() < 60:
-                    time_str = "только что"
-                elif time_ago.total_seconds() < 3600:
-                    minutes = int(time_ago.total_seconds() / 60)
-                    time_str = f"{minutes} мин. назад"
-                elif time_ago.total_seconds() < 86400:
-                    hours = int(time_ago.total_seconds() / 3600)
-                    time_str = f"{hours} ч. назад"
-                else:
-                    days = int(time_ago.total_seconds() / 86400)
-                    time_str = f"{days} дн. назад"
-                
-                report += f"{source_type} <b>{source_name}</b>: {time_str}\n"
-                
-            except Exception as e:
-                report += f"❓ <b>{key}</b>: ошибка парсинга времени\n"
+        for channel in test_channels:
+            # Время последней проверки
+            last_check = await content_monitor._get_last_check_time(f"tg_{channel}")
+            last_check_str = last_check.strftime('%d.%m %H:%M') if last_check else "Нет"
+            
+            # ID последнего сообщения
+            last_id = await content_monitor._get_last_message_id(f"tg_{channel}")
+            last_id_str = str(last_id) if last_id else "Нет"
+            
+            status_text += f"• {channel}:\n"
+            status_text += f"  ⏰ Время: {last_check_str}\n"
+            status_text += f"  🆔 ID: {last_id_str}\n"
         
-        await message.answer(report, parse_mode="HTML")
+        # Проверяем RSS
+        if config.RSS_SOURCES:
+            status_text += f"\n📡 <b>RSS источники:</b>\n"
+            for rss_url in config.RSS_SOURCES[:3]:  # Показываем первые 3
+                last_check = await content_monitor._get_last_check_time(f"rss_{rss_url}")
+                last_check_str = last_check.strftime('%d.%m %H:%M') if last_check else "Нет"
+                status_text += f"• {rss_url}: {last_check_str}\n"
+        
+        status_text += f"\n💡 <b>Как работает:</b>\n"
+        status_text += "• Telegram: отслеживание по ID сообщений\n"
+        status_text += "• RSS: отслеживание по времени\n"
+        status_text += "• При первой проверке: последние 10 сообщений\n"
+        
+        await message.answer(status_text, parse_mode="HTML")
         
     except Exception as e:
-        logger.error(f"Ошибка получения времени проверки: {e}")
-        await message.answer("❌ Ошибка при получении времени проверки.")
+        logger.error(f"Ошибка проверки времени: {e}")
+        await message.answer(f"❌ Ошибка: {e}")
 
 @router.message(Command("test_notification"))
 async def cmd_test_notification(message: Message):
@@ -3308,7 +3296,7 @@ async def cmd_force_monitor(message: Message):
             await db.set_setting(f"last_check_rss_{rss_url}", 
                                (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat())
         
-        await message.answer("⏰ <b>Время проверки сброшено на 48 часов назад</b>", parse_mode="HTML")
+        await message.answer("⏰ <b>Время проверки и ID сообщений сброшены</b>", parse_mode="HTML")
         
         # Запускаем мониторинг
         await content_monitor.run_monitoring_cycle()
@@ -3344,19 +3332,18 @@ async def cmd_check_channel(message: Message):
         
         await message.answer(f"🔍 <b>Проверяю канал {channel}...</b>", parse_mode="HTML")
         
-        # Получаем время последней проверки
-        last_check_time = await content_monitor._get_last_check_time(f"tg_{channel}")
-        if not last_check_time:
-            last_check_time = datetime.now(timezone.utc) - timedelta(hours=24)
+        # Получаем ID последнего сообщения
+        last_message_id = await content_monitor._get_last_message_id(f"tg_{channel}")
+        if not last_message_id:
+            last_message_id = "Нет (первая проверка)"
         
-        await message.answer(f"⏰ <b>Время последней проверки:</b> {last_check_time}", parse_mode="HTML")
+        await message.answer(f"🆔 <b>ID последнего сообщения:</b> {last_message_id}", parse_mode="HTML")
         
         # Получаем сообщения
         entity = await content_monitor.tg_client.get_entity(channel)
         messages = await content_monitor.tg_client.get_messages(
             entity, 
-            limit=20,
-            offset_date=last_check_time
+            limit=20
         )
         
         await message.answer(f"📊 <b>Найдено {len(messages)} сообщений</b>", parse_mode="HTML")
@@ -3364,11 +3351,15 @@ async def cmd_check_channel(message: Message):
         new_messages = 0
         matched_messages = 0
         
-        for message in reversed(messages):
+        # Сортируем по ID (новые первыми)
+        messages.sort(key=lambda m: m.id, reverse=True)
+        
+        for message in messages:
             if not message.text:
                 continue
             
-            if message.date <= last_check_time:
+            # Проверяем, новое ли это сообщение
+            if last_message_id != "Нет (первая проверка)" and message.id <= int(last_message_id):
                 continue
             
             new_messages += 1
@@ -3379,6 +3370,7 @@ async def cmd_check_channel(message: Message):
                 matched_messages += 1
                 await message.answer(
                     f"🎯 <b>Найден релевантный пост:</b>\n\n"
+                    f"🆔 ID: {message.id}\n"
                     f"📅 {message.date}\n"
                     f"🔍 Ключевые слова: {', '.join(matched_keywords)}\n"
                     f"📝 {message.text[:200]}...",
@@ -3389,7 +3381,7 @@ async def cmd_check_channel(message: Message):
             f"📈 <b>Результат проверки канала {channel}:</b>\n\n"
             f"• Новых сообщений: {new_messages}\n"
             f"• Релевантных постов: {matched_messages}\n"
-            f"• Время проверки: {last_check_time}",
+            f"• Последний ID: {last_message_id}",
             parse_mode="HTML"
         )
         
