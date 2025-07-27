@@ -432,12 +432,6 @@ class ContentMonitor:
                             logger.debug(f"Пропускаем уже обработанное сообщение {message.id} <= {last_message_id}")
                             continue
                     
-                    # Проверяем, что сообщение действительно новое
-                    # message.date уже имеет часовой пояс от Telethon
-                    if message.date <= last_check_time:
-                        logger.debug(f"Пропускаем старое сообщение {message.id}: {message.date} <= {last_check_time}")
-                        continue
-                    
                     # Проверяем, что сообщение не старше CUTOFF_DATE
                     if message.date < CUTOFF_DATE:
                         logger.debug(f"Пропускаем сообщение старше {CUTOFF_DATE}: {message.id} от {message.date}")
