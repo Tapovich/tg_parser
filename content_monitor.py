@@ -23,7 +23,7 @@ from database import db
 logger = logging.getLogger(__name__)
 
 # Устанавливаем дату, до которой игнорируем старые посты
-CUTOFF_DATE = datetime(2025, 7, 25, tzinfo=timezone.utc)
+CUTOFF_DATE = datetime(2025, 7, 27, tzinfo=timezone.utc)
 
 # Очищаем переменные окружения от прокси на уровне модуля
 proxy_vars = ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY']
@@ -276,6 +276,11 @@ class ContentMonitor:
                         logger.debug(f"Пропускаем старую RSS запись: {pub_date} <= {last_check_time}")
                         continue
                     
+                    # Проверяем, что запись не старше CUTOFF_DATE
+                    if pub_date and pub_date < CUTOFF_DATE:
+                        logger.debug(f"Пропускаем RSS запись старше {CUTOFF_DATE}: {pub_date}")
+                        continue
+                    
                     title = entry.get('title', '')
                     description = entry.get('description', '') or entry.get('summary', '')
                     full_text = f"{title}\n\n{description}"
@@ -426,6 +431,17 @@ class ContentMonitor:
                         if message.id <= last_message_id:
                             logger.debug(f"Пропускаем уже обработанное сообщение {message.id} <= {last_message_id}")
                             continue
+                    
+                    # Проверяем, что сообщение действительно новое
+                    # message.date уже имеет часовой пояс от Telethon
+                    if message.date <= last_check_time:
+                        logger.debug(f"Пропускаем старое сообщение {message.id}: {message.date} <= {last_check_time}")
+                        continue
+                    
+                    # Проверяем, что сообщение не старше CUTOFF_DATE
+                    if message.date < CUTOFF_DATE:
+                        logger.debug(f"Пропускаем сообщение старше {CUTOFF_DATE}: {message.id} от {message.date}")
+                        continue
                     
                     logger.debug(f"Обрабатываем новое сообщение {message.id}: {message.date}")
                     matched_keywords = self.check_keywords(message.text)

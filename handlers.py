@@ -143,6 +143,7 @@ async def cmd_help(message: Message):
 
 <b>Управление проверками:</b>
 /check_times - показать время последней проверки источников
+/check_cutoff - показать дату отсечения старых постов
 /reset_checks - сбросить время проверки (проверить заново все посты)
 /reset_ids - сбросить только ID сообщений Telegram
 /time_debug - диагностика проблем с временем
@@ -3462,4 +3463,41 @@ async def cmd_reset_ids(message: Message):
         
     except Exception as e:
         logger.error(f"Ошибка сброса ID: {e}")
+        await message.answer(f"❌ Ошибка: {e}")
+
+@router.message(Command("check_cutoff"))
+async def cmd_check_cutoff(message: Message):
+    """Показывает дату отсечения и текущее время"""
+    if not is_admin(message.from_user.id):
+        await message.answer("❌ У вас нет прав доступа.")
+        return
+    
+    try:
+        from content_monitor import CUTOFF_DATE
+        
+        # Текущее время в разных часовых поясах
+        utc_now = datetime.now(timezone.utc)
+        local_now = datetime.now()
+        
+        status_text = "📅 <b>Дата отсечения</b>\n\n"
+        status_text += f"🕐 <b>Дата отсечения:</b> {CUTOFF_DATE.strftime('%Y-%m-%d %H:%M:%S')} UTC\n"
+        status_text += f"🌍 <b>Текущее UTC время:</b> {utc_now.strftime('%Y-%m-%d %H:%M:%S')}\n"
+        status_text += f"🏠 <b>Локальное время сервера:</b> {local_now.strftime('%Y-%m-%d %H:%M:%S')}\n"
+        status_text += f"🇺🇿 <b>Узбекское время:</b> {(utc_now + timedelta(hours=5)).strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+        
+        # Проверяем, прошло ли время отсечения
+        if utc_now >= CUTOFF_DATE:
+            status_text += "✅ <b>Статус:</b> Бот обрабатывает посты после отсечения\n"
+        else:
+            status_text += "⏳ <b>Статус:</b> Ожидание даты отсечения\n"
+        
+        status_text += f"\n💡 <b>Как работает:</b>\n"
+        status_text += "• Бот игнорирует все посты до 27 июля 2025\n"
+        status_text += "• Обрабатываются только новые посты\n"
+        status_text += "• Защита от старых сообщений\n"
+        
+        await message.answer(status_text, parse_mode="HTML")
+        
+    except Exception as e:
+        logger.error(f"Ошибка проверки даты отсечения: {e}")
         await message.answer(f"❌ Ошибка: {e}")
