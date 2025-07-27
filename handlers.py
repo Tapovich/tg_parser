@@ -3164,3 +3164,90 @@ async def cmd_check_times(message: Message):
     except Exception as e:
         logger.error(f"Ошибка получения времени проверки: {e}")
         await message.answer("❌ Ошибка при получении времени проверки.")
+
+@router.message(Command("test_notification"))
+async def cmd_test_notification(message: Message):
+    """Тестирует отправку уведомления о новом посте"""
+    if not is_admin(message.from_user.id):
+        await message.answer("❌ У вас нет прав доступа.")
+        return
+    
+    try:
+        # Создаем тестовый пост
+        test_draft_id = await db.add_content_draft(
+            source_type='test',
+            source_name='Тестовый источник',
+            original_text='Это тестовое уведомление для проверки работы бота. Содержит ключевые слова: Telegram, TON, NFT.',
+            source_url='https://example.com/test',
+            source_date=datetime.now(timezone.utc).isoformat(),
+            keywords_matched=['Telegram', 'TON', 'NFT']
+        )
+        
+        # Получаем созданный черновик
+        draft = await db.get_draft_by_id(test_draft_id)
+        
+        if draft:
+            # Имитируем уведомление
+            from content_monitor import content_monitor
+            await content_monitor.send_new_post_to_admin(message.bot, message.from_user.id, draft)
+            
+            await message.answer(
+                f"✅ <b>Тестовое уведомление отправлено!</b>\n\n"
+                f"📋 ID тестового поста: #{test_draft_id}\n"
+                f"🔍 Проверьте сообщение выше - должно появиться уведомление с кнопками.",
+                parse_mode="HTML"
+            )
+        else:
+            await message.answer("❌ Ошибка создания тестового поста")
+            
+    except Exception as e:
+        logger.error(f"Ошибка тестирования уведомления: {e}")
+        await message.answer(f"❌ Ошибка: {e}")
+
+@router.message(Command("bot_status"))
+async def cmd_bot_status(message: Message):
+    """Показывает статус бота и content_monitor"""
+    if not is_admin(message.from_user.id):
+        await message.answer("❌ У вас нет прав доступа.")
+        return
+    
+    try:
+        from content_monitor import content_monitor
+        
+        status_text = "🤖 <b>Статус бота и мониторинга</b>\n\n"
+        
+        # Статус бота
+        bot_info = await message.bot.get_me()
+        status_text += f"📱 <b>Бот:</b> @{bot_info.username}\n"
+        status_text += f"🆔 <b>ID:</b> {bot_info.id}\n"
+        status_text += f"📝 <b>Имя:</b> {bot_info.first_name}\n\n"
+        
+        # Статус content_monitor
+        status_text += f"🔍 <b>Content Monitor:</b>\n"
+        status_text += f"• Бот установлен: {'✅' if content_monitor.bot_instance else '❌'}\n"
+        status_text += f"• Telethon клиент: {'✅' if content_monitor.tg_client else '❌'}\n"
+        status_text += f"• HTTP сессия: {'✅' if content_monitor.session else '❌'}\n"
+        status_text += f"• Ключевые слова: {len(content_monitor.keywords)}\n\n"
+        
+        # Статус базы данных
+        try:
+            drafts_count = await db.get_content_drafts_count()
+            status_text += f"💾 <b>База данных:</b>\n"
+            status_text += f"• Черновиков: {drafts_count}\n"
+        except Exception as e:
+            status_text += f"❌ Ошибка БД: {e}\n"
+        
+        # Проверка уведомлений
+        status_text += f"\n🔔 <b>Тест уведомлений:</b>\n"
+        if content_monitor.bot_instance:
+            status_text += "• Бот доступен для уведомлений ✅\n"
+            status_text += "• Используйте /test_notification для проверки\n"
+        else:
+            status_text += "• Бот НЕ доступен для уведомлений ❌\n"
+            status_text += "• Проверьте инициализацию в main.py\n"
+        
+        await message.answer(status_text, parse_mode="HTML")
+        
+    except Exception as e:
+        logger.error(f"Ошибка получения статуса: {e}")
+        await message.answer(f"❌ Ошибка: {e}")

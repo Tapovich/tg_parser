@@ -139,6 +139,17 @@ class Database:
             
             await db.commit()
     
+    async def get_content_drafts_count(self) -> int:
+        """Получает количество черновиков"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                cursor = await db.execute('SELECT COUNT(*) FROM content_drafts')
+                result = await cursor.fetchone()
+                return result[0] if result else 0
+        except Exception as e:
+            logger.error(f"Ошибка подсчета черновиков: {e}")
+            return 0
+
     async def get_setting(self, key: str) -> Optional[str]:
         """Получает значение настройки по ключу"""
         try:

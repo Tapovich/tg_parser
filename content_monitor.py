@@ -74,6 +74,11 @@ class ContentMonitor:
     def set_bot_instance(self, bot_instance):
         """Устанавливает экземпляр бота для отправки уведомлений"""
         self.bot_instance = bot_instance
+        logger.info(f"Экземпляр бота установлен в content_monitor: {bot_instance is not None}")
+        if bot_instance:
+            logger.info(f"Бот ID: {getattr(bot_instance, 'id', 'неизвестно')}")
+        else:
+            logger.warning("Экземпляр бота не передан!")
         
     async def init_telethon(self):
         """Инициализация Telethon клиента"""
@@ -244,10 +249,12 @@ class ContentMonitor:
             if not last_check_time:
                 # Если нет записи в БД, берем время 24 часа назад с UTC
                 last_check_time = datetime.now(timezone.utc) - timedelta(hours=24)
+                logger.info(f"RSS {rss_url}: нет записи в БД, берем время {last_check_time}")
             else:
                 # Убеждаемся, что last_check_time имеет часовой пояс
                 if last_check_time.tzinfo is None:
                     last_check_time = last_check_time.replace(tzinfo=timezone.utc)
+                logger.info(f"RSS {rss_url}: время последней проверки {last_check_time}")
             
             new_entries = 0
             for entry in feed.entries:
@@ -262,6 +269,7 @@ class ContentMonitor:
                     
                     # Пропускаем старые записи
                     if pub_date and pub_date <= last_check_time:
+                        logger.debug(f"Пропускаем старую RSS запись: {pub_date} <= {last_check_time}")
                         continue
                     
                     title = entry.get('title', '')
@@ -269,10 +277,15 @@ class ContentMonitor:
                     full_text = f"{title}\n\n{description}"
                     clean_full_text = self.clean_text(full_text)
                     matched_keywords = self.check_keywords(clean_full_text)
+                    logger.debug(f"RSS запись '{title}': найдены ключевые слова {matched_keywords}")
+                    
                     if matched_keywords:
                         entry_url = entry.get('link', '')
                         if await db.check_content_exists('rss', entry_url):
+                            logger.debug(f"RSS пост уже существует: {entry_url}")
                             continue
+                        
+                        logger.info(f"Добавляем новый RSS пост: {title[:50]}...")
                         draft_id = await db.add_content_draft(
                             source_type='rss',
                             source_name=source_name,
@@ -283,7 +296,16 @@ class ContentMonitor:
                         )
                         new_entries += 1
                         logger.info(f"Добавлен RSS контент #{draft_id}: {title[:50]}...")
-                        await self._notify_admin_about_new_post(draft_id)
+                        
+                        # Проверяем, что бот доступен для уведомлений
+                        if self.bot_instance:
+                            logger.info(f"Отправляем уведомление о RSS посте #{draft_id}")
+                            await self._notify_admin_about_new_post(draft_id)
+                        else:
+                            logger.warning(f"Бот не доступен для уведомления о RSS посте #{draft_id}")
+                    else:
+                        logger.debug(f"RSS запись '{title}' не содержит ключевых слов")
+                        
                 except Exception as e:
                     logger.error(f"Ошибка обработки RSS записи: {e}")
                     continue
@@ -316,10 +338,12 @@ class ContentMonitor:
             if not last_check_time:
                 # Если нет записи в БД, берем время 24 часа назад с UTC
                 last_check_time = datetime.now(timezone.utc) - timedelta(hours=24)
+                logger.info(f"Канал {channel}: нет записи в БД, берем время {last_check_time}")
             else:
                 # Убеждаемся, что last_check_time имеет часовой пояс
                 if last_check_time.tzinfo is None:
                     last_check_time = last_check_time.replace(tzinfo=timezone.utc)
+                logger.info(f"Канал {channel}: время последней проверки {last_check_time}")
             
             messages = await self.tg_client.get_messages(
                 entity, 
@@ -331,18 +355,26 @@ class ContentMonitor:
             for message in reversed(messages):
                 try:
                     if not message.text:
+                        logger.debug(f"Пропускаем сообщение без текста: {message.id}")
                         continue
                     
                     # Проверяем, что сообщение действительно новое
                     # message.date уже имеет часовой пояс от Telethon
                     if message.date <= last_check_time:
+                        logger.debug(f"Пропускаем старое сообщение {message.id}: {message.date} <= {last_check_time}")
                         continue
                     
+                    logger.debug(f"Обрабатываем новое сообщение {message.id}: {message.date}")
                     matched_keywords = self.check_keywords(message.text)
+                    logger.debug(f"Найдены ключевые слова: {matched_keywords}")
+                    
                     if matched_keywords:
                         message_url = f"https://t.me/{channel.replace('@', '')}/{message.id}"
                         if await db.check_content_exists('telegram', message_url):
+                            logger.debug(f"Пост уже существует: {message_url}")
                             continue
+                        
+                        logger.info(f"Добавляем новый TG пост: {message.text[:50]}...")
                         draft_id = await db.add_content_draft(
                             source_type='telegram',
                             source_name=channel,
@@ -353,7 +385,16 @@ class ContentMonitor:
                         )
                         new_entries += 1
                         logger.info(f"Добавлен TG контент #{draft_id}: {message.text[:50]}...")
-                        await self._notify_admin_about_new_post(draft_id)
+                        
+                        # Проверяем, что бот доступен для уведомлений
+                        if self.bot_instance:
+                            logger.info(f"Отправляем уведомление о посте #{draft_id}")
+                            await self._notify_admin_about_new_post(draft_id)
+                        else:
+                            logger.warning(f"Бот не доступен для уведомления о посте #{draft_id}")
+                    else:
+                        logger.debug(f"Сообщение {message.id} не содержит ключевых слов")
+                        
                 except Exception as e:
                     logger.error(f"Ошибка обработки сообщения: {e}")
                     continue
@@ -471,14 +512,18 @@ class ContentMonitor:
     async def _notify_admin_about_new_post(self, draft_id: int):
         """Уведомляет всех админов о новом найденном посте с защитой от flood control"""
         try:
+            logger.info(f"Начинаем уведомление о посте #{draft_id}")
             draft = await db.get_draft_by_id(draft_id)
             if not draft:
                 logger.error(f"Черновик #{draft_id} не найден")
                 return
             
+            logger.info(f"Черновик #{draft_id} найден: {draft.get('original_text', '')[:50]}...")
+            
             # Отправляем уведомления с задержкой между админами
             for i, user_id in enumerate(ADMIN_USERS):
                 try:
+                    logger.info(f"Отправляем уведомление админу {user_id} о посте #{draft_id}")
                     await self.send_new_post_to_admin(self.bot_instance, user_id, draft)
                     logger.info(f"Уведомление о посте #{draft_id} отправлено админу {user_id}")
                     
