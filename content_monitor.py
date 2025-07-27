@@ -39,21 +39,10 @@ class ContentMonitor:
         self.keywords = config.KEYWORDS
         self.last_check = {}
         self.bot_instance = None
-        self.last_notification_time = {}  # Для защиты от flood control
-        self.min_notification_interval = 30  # Минимальный интервал между уведомлениями (секунды)
         
     async def safe_send_message(self, chat_id: int, text: str, parse_mode: str = "HTML"):
-        """Безопасная отправка сообщения с защитой от flood control"""
+        """Безопасная отправка сообщения без задержек"""
         try:
-            # Проверяем, не слишком ли часто отправляем сообщения
-            current_time = time.time()
-            last_time = self.last_notification_time.get(chat_id, 0)
-            
-            if current_time - last_time < self.min_notification_interval:
-                wait_time = self.min_notification_interval - (current_time - last_time)
-                logger.info(f"Ждем {wait_time:.1f} секунд перед отправкой сообщения пользователю {chat_id}")
-                await asyncio.sleep(wait_time)
-            
             message_params = {
                 'chat_id': chat_id,
                 'text': text,
@@ -61,15 +50,8 @@ class ContentMonitor:
             }
             await self.bot_instance.send_message(**message_params)
             
-            # Обновляем время последней отправки
-            self.last_notification_time[chat_id] = time.time()
-            
         except Exception as e:
             logger.error(f"Ошибка отправки сообщения пользователю {chat_id}: {e}")
-            # При ошибке flood control ждем дольше
-            if "Flood control" in str(e) or "Too Many Requests" in str(e):
-                logger.warning(f"Flood control для пользователя {chat_id}, ждем 5 минут")
-                self.last_notification_time[chat_id] = time.time() + 300  # 5 минут
         
     def set_bot_instance(self, bot_instance):
         """Устанавливает экземпляр бота для отправки уведомлений"""
@@ -566,7 +548,7 @@ class ContentMonitor:
             logger.error(f"Traceback: {traceback.format_exc()}")
 
     async def _notify_admin_about_new_post(self, draft_id: int):
-        """Уведомляет всех админов о новом найденном посте с защитой от flood control"""
+        """Уведомляет всех админов о новом найденном посте без задержек"""
         try:
             logger.info(f"Начинаем уведомление о посте #{draft_id}")
             draft = await db.get_draft_by_id(draft_id)
@@ -576,16 +558,12 @@ class ContentMonitor:
             
             logger.info(f"Черновик #{draft_id} найден: {draft.get('original_text', '')[:50]}...")
             
-            # Отправляем уведомления с задержкой между админами
-            for i, user_id in enumerate(ADMIN_USERS):
+            # Отправляем уведомления всем админам без задержек
+            for user_id in ADMIN_USERS:
                 try:
                     logger.info(f"Отправляем уведомление админу {user_id} о посте #{draft_id}")
                     await self.send_new_post_to_admin(self.bot_instance, user_id, draft)
                     logger.info(f"Уведомление о посте #{draft_id} отправлено админу {user_id}")
-                    
-                    # Добавляем задержку между отправками для защиты от flood control
-                    if i < len(ADMIN_USERS) - 1:  # Не ждем после последнего админа
-                        await asyncio.sleep(2)  # 2 секунды между уведомлениями
                         
                 except Exception as e:
                     logger.error(f"Ошибка отправки уведомления админу {user_id}: {e}")

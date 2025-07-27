@@ -68,11 +68,12 @@ class TaskScheduler:
                 # Здесь можно добавить другие периодические задачи
                 # Например, очистка старых записей, статистика и т.д.
                 
-                await asyncio.sleep(60)  # Проверяем каждую минуту
+                # Убираем задержку - проверяем сразу
                 
             except Exception as e:
                 logger.error(f"Ошибка в планировщике: {e}")
-                await asyncio.sleep(60)
+                # При ошибке небольшая пауза
+                await asyncio.sleep(10)
     
     async def _monitor_content_loop(self):
         """Цикл мониторинга контента"""
@@ -83,7 +84,7 @@ class TaskScheduler:
                 # Запускаем мониторинг
                 await content_monitor.run_monitoring_cycle()
                 
-                # Ждем до следующего цикла
+                # Ждем до следующего цикла (оставляем только основную задержку)
                 interval_minutes = config.MONITORING_INTERVAL_MINUTES
                 logger.info(f"Следующий цикл мониторинга через {interval_minutes} минут")
                 await asyncio.sleep(interval_minutes * 60)
