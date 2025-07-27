@@ -144,6 +144,9 @@ async def cmd_help(message: Message):
 <b>Управление проверками:</b>
 /check_times - показать время последней проверки источников
 /reset_checks - сбросить время проверки (проверить заново все посты)
+/time_debug - диагностика проблем с временем
+/force_monitor - принудительный мониторинг с сбросом времени
+/check_channel @name - проверка конкретного канала
 
 <b>Как работает бот (ручной режим):</b>
 1. Мониторит указанные источники в реальном времени
@@ -3392,4 +3395,50 @@ async def cmd_check_channel(message: Message):
         
     except Exception as e:
         logger.error(f"Ошибка проверки канала {channel}: {e}")
+        await message.answer(f"❌ Ошибка: {e}")
+
+@router.message(Command("time_debug"))
+async def cmd_time_debug(message: Message):
+    """Диагностика проблем с временем"""
+    if not is_admin(message.from_user.id):
+        await message.answer("❌ У вас нет прав доступа.")
+        return
+    
+    try:
+        from datetime import timezone
+        from content_monitor import content_monitor
+        
+        # Текущее время в разных часовых поясах
+        utc_now = datetime.now(timezone.utc)
+        local_now = datetime.now()  # Локальное время сервера
+        
+        status_text = "🕐 <b>Диагностика времени</b>\n\n"
+        status_text += f"🌍 <b>UTC время:</b> {utc_now.strftime('%Y-%m-%d %H:%M:%S')}\n"
+        status_text += f"🏠 <b>Локальное время сервера:</b> {local_now.strftime('%Y-%m-%d %H:%M:%S')}\n"
+        status_text += f"🇺🇿 <b>Узбекское время (UTC+5):</b> {(utc_now + timedelta(hours=5)).strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+        
+        # Проверяем время последней проверки для нескольких каналов
+        test_channels = ['@durov', '@telegram', '@toncoin']
+        status_text += "📊 <b>Время последней проверки каналов:</b>\n"
+        
+        for channel in test_channels:
+            last_check = await content_monitor._get_last_check_time(f"tg_{channel}")
+            if last_check:
+                status_text += f"• {channel}: {last_check.strftime('%Y-%m-%d %H:%M:%S')} UTC\n"
+            else:
+                status_text += f"• {channel}: Нет записи\n"
+        
+        status_text += f"\n🔍 <b>Проблема:</b>\n"
+        status_text += "Бот использует UTC время, а Telegram сообщения тоже в UTC.\n"
+        status_text += "Если время последней проверки новее, чем время сообщений,\n"
+        status_text += "бот будет пропускать новые посты.\n\n"
+        
+        status_text += "💡 <b>Решение:</b>\n"
+        status_text += "Используйте /reset_checks для сброса времени\n"
+        status_text += "или /force_monitor для принудительной проверки"
+        
+        await message.answer(status_text, parse_mode="HTML")
+        
+    except Exception as e:
+        logger.error(f"Ошибка диагностики времени: {e}")
         await message.answer(f"❌ Ошибка: {e}")

@@ -254,7 +254,11 @@ class ContentMonitor:
                 # Убеждаемся, что last_check_time имеет часовой пояс
                 if last_check_time.tzinfo is None:
                     last_check_time = last_check_time.replace(tzinfo=timezone.utc)
-                logger.info(f"RSS {rss_url}: время последней проверки {last_check_time}")
+                
+                # Добавляем буфер времени для компенсации разницы часовых поясов
+                # Отнимаем 6 часов от времени последней проверки, чтобы захватить больше записей
+                last_check_time = last_check_time - timedelta(hours=6)
+                logger.info(f"RSS {rss_url}: время последней проверки {last_check_time} (с буфером -6ч)")
             
             new_entries = 0
             for entry in feed.entries:
@@ -343,7 +347,11 @@ class ContentMonitor:
                 # Убеждаемся, что last_check_time имеет часовой пояс
                 if last_check_time.tzinfo is None:
                     last_check_time = last_check_time.replace(tzinfo=timezone.utc)
-                logger.info(f"Канал {channel}: время последней проверки {last_check_time}")
+                
+                # Добавляем буфер времени для компенсации разницы часовых поясов
+                # Отнимаем 6 часов от времени последней проверки, чтобы захватить больше сообщений
+                last_check_time = last_check_time - timedelta(hours=6)
+                logger.info(f"Канал {channel}: время последней проверки {last_check_time} (с буфером -6ч)")
             
             messages = await self.tg_client.get_messages(
                 entity, 
