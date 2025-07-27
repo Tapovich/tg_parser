@@ -4,9 +4,15 @@
 
 import re
 import random
+import os
 from typing import Dict, List, Optional
 from emoji_config import apply_template, get_emoji, get_thematic_emoji
 
+# Очищаем переменные окружения от прокси на уровне модуля
+proxy_vars = ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY']
+for var in proxy_vars:
+    if var in os.environ:
+        del os.environ[var]
 
 class ContentRewriter:
     """Класс для перефразирования контента в стиле новостного канала"""

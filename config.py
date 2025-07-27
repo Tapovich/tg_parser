@@ -3,6 +3,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Очищаем переменные окружения от прокси на уровне модуля
+proxy_vars = ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY']
+for var in proxy_vars:
+    if var in os.environ:
+        del os.environ[var]
+
 class Config:
     BOT_TOKEN = os.getenv('BOT_TOKEN')
     ADMIN_ID = int(os.getenv('ADMIN_ID', 0))

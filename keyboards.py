@@ -1,5 +1,12 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+import os
+
+# Очищаем переменные окружения от прокси на уровне модуля
+proxy_vars = ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY']
+for var in proxy_vars:
+    if var in os.environ:
+        del os.environ[var]
 
 def get_moderation_keyboard(post_id: int) -> InlineKeyboardMarkup:
     """Клавиатура для модерации постов"""

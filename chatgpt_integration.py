@@ -8,14 +8,29 @@ import logging
 from typing import Dict, Optional, List
 from config import config
 import asyncio
+import os
 
 logger = logging.getLogger(__name__)
 
-# Инициализация OpenAI без параметра proxies
+# Полностью безопасная инициализация OpenAI без любых прокси
 client = None
 if config.OPENAI_API_KEY:
-    # Важно: не передавать proxies ни явно, ни неявно!
-    client = openai.OpenAI(api_key=config.OPENAI_API_KEY)
+    try:
+        # Явно очищаем любые переменные окружения, связанные с прокси
+        proxy_vars = ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY']
+        for var in proxy_vars:
+            if var in os.environ:
+                del os.environ[var]
+        
+        # Создаем клиент только с необходимыми параметрами
+        client = openai.OpenAI(
+            api_key=config.OPENAI_API_KEY,
+            # Явно НЕ передаем никаких параметров, связанных с прокси
+        )
+        logger.info("OpenAI клиент успешно инициализирован")
+    except Exception as e:
+        logger.error(f"Ошибка инициализации OpenAI клиента: {e}")
+        client = None
 
 
 

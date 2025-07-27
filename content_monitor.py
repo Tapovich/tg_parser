@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Optional
 import re
 from bs4 import BeautifulSoup
+import os
 
 try:
     from telethon import TelegramClient
@@ -22,6 +23,13 @@ logger = logging.getLogger(__name__)
 
 # Устанавливаем дату, до которой игнорируем старые посты
 CUTOFF_DATE = datetime(2025, 7, 25, tzinfo=timezone.utc)
+
+# Очищаем переменные окружения от прокси на уровне модуля
+proxy_vars = ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY']
+for var in proxy_vars:
+    if var in os.environ:
+        del os.environ[var]
+        logger.info(f"Удалена переменная окружения: {var}")
 
 class ContentMonitor:
     def __init__(self):
@@ -52,6 +60,13 @@ class ContentMonitor:
             
         try:
             config.validate_telethon()
+            
+            # Очищаем переменные окружения перед инициализацией Telethon
+            proxy_vars = ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY']
+            for var in proxy_vars:
+                if var in os.environ:
+                    del os.environ[var]
+            
             self.tg_client = TelegramClient(
                 'content_monitor_session', 
                 config.API_ID, 
@@ -71,6 +86,12 @@ class ContentMonitor:
     
     async def init_session(self):
         """Инициализация HTTP сессии"""
+        # Очищаем переменные окружения перед созданием сессии
+        proxy_vars = ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY']
+        for var in proxy_vars:
+            if var in os.environ:
+                del os.environ[var]
+        
         self.session = aiohttp.ClientSession(
             timeout=aiohttp.ClientTimeout(total=30),
             headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}

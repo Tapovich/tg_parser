@@ -1,27 +1,28 @@
-FROM python:3.9-slim
+FROM python:3.11-slim
 
-# Установка зависимостей для lxml
-RUN apt-get update && apt-get install -y \
-    gcc \
-    python3-dev \
-    libxml2-dev \
-    libxslt1-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-# Создание рабочей директории
+# Устанавливаем рабочую директорию
 WORKDIR /app
 
-# Копирование файлов зависимостей
+# Копируем файлы зависимостей
 COPY requirements.txt .
 
-# Установка зависимостей
-RUN pip install --no-cache-dir -r requirements.txt
+# Устанавливаем зависимости с принудительным обновлением
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt && \
+    pip install --upgrade httpx openai
 
-# Копирование исходного кода
+# Копируем код приложения
 COPY . .
 
-# Создание volume для базы данных
-# VOLUME ["/app/data"]
+# Очищаем переменные окружения от прокси
+ENV HTTP_PROXY=""
+ENV HTTPS_PROXY=""
+ENV ALL_PROXY=""
+ENV NO_PROXY=""
 
-# Запуск бота
+# Устанавливаем переменные окружения для Python
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# Запускаем приложение
 CMD ["python", "main.py"] 

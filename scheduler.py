@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 from datetime import datetime, timedelta
 from typing import Dict, Any
 
@@ -8,6 +9,13 @@ from config import config
 from database import db
 
 logger = logging.getLogger(__name__)
+
+# Очищаем переменные окружения от прокси на уровне модуля
+proxy_vars = ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY']
+for var in proxy_vars:
+    if var in os.environ:
+        del os.environ[var]
+        logger.info(f"Scheduler: удалена переменная окружения: {var}")
 
 class TaskScheduler:
     def __init__(self):
@@ -20,6 +28,12 @@ class TaskScheduler:
         if self.running:
             logger.warning("Планировщик уже запущен")
             return
+            
+        # Очищаем переменные окружения перед запуском
+        proxy_vars = ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY']
+        for var in proxy_vars:
+            if var in os.environ:
+                del os.environ[var]
             
         self.bot_instance = bot_instance
         self.running = True

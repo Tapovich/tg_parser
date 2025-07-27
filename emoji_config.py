@@ -1,4 +1,11 @@
 import random
+import os
+
+# Очищаем переменные окружения от прокси на уровне модуля
+proxy_vars = ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY']
+for var in proxy_vars:
+    if var in os.environ:
+        del os.environ[var]
 
 # Telegram Premium Emoji IDs
 PREMIUM_EMOJIS = {

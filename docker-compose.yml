@@ -1,21 +1,31 @@
 version: '3.8'
 
 services:
-  bot:
+  telegram-bot:
     build: .
-    volumes:
-      - ./data:/app/data
-      - ./.env:/app/.env
-    restart: always
+    container_name: telegram-parcer-bot
+    restart: unless-stopped
     environment:
-      - TZ=UTC
-      # Explicitly disable proxies for the bot
+      # Явно отключаем все прокси
       - HTTP_PROXY=
       - HTTPS_PROXY=
-      - http_proxy=
-      - https_proxy=
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3" 
+      - ALL_PROXY=
+      - NO_PROXY=
+      # Переменные окружения для бота
+      - BOT_TOKEN=${BOT_TOKEN}
+      - ADMIN_ID=${ADMIN_ID}
+      - CHANNEL_ID=${CHANNEL_ID}
+      - DATABASE_URL=${DATABASE_URL}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - API_ID=${API_ID}
+      - API_HASH=${API_HASH}
+      - PHONE_NUMBER=${PHONE_NUMBER}
+      - MONITORING_INTERVAL_MINUTES=${MONITORING_INTERVAL_MINUTES:-5}
+    volumes:
+      - ./data:/app/data
+    networks:
+      - bot-network
+
+networks:
+  bot-network:
+    driver: bridge 

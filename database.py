@@ -3,6 +3,13 @@ import asyncio
 from typing import List, Dict, Optional
 import json
 from datetime import datetime
+import os
+
+# Очищаем переменные окружения от прокси на уровне модуля
+proxy_vars = ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY']
+for var in proxy_vars:
+    if var in os.environ:
+        del os.environ[var]
 
 class Database:
     def __init__(self, db_path: str = "bot.db"):

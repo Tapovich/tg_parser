@@ -9,8 +9,16 @@ from aiogram.exceptions import TelegramBadRequest
 from datetime import datetime
 import html as html_escape
 import logging
+import os
 
 logger = logging.getLogger(__name__)
+
+# Очищаем переменные окружения от прокси на уровне модуля
+proxy_vars = ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY']
+for var in proxy_vars:
+    if var in os.environ:
+        del os.environ[var]
+        logger.info(f"Handlers: удалена переменная окружения: {var}")
 
 from config import config, is_admin
 from database import db

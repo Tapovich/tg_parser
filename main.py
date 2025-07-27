@@ -1,7 +1,11 @@
 import asyncio
 import logging
+import os
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
+
+# Импортируем модуль очистки прокси первым
+from proxy_cleaner import ensure_no_proxy_environment
 
 from config import config
 from database import db
@@ -17,6 +21,9 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Гарантированно очищаем окружение от прокси
+ensure_no_proxy_environment()
 
 async def main():
     """Основная функция запуска бота"""
