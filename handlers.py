@@ -144,6 +144,7 @@ async def cmd_help(message: Message):
 <b>Управление проверками:</b>
 /check_times - показать время последней проверки источников
 /reset_checks - сбросить время проверки (проверить заново все посты)
+/reset_ids - сбросить только ID сообщений Telegram
 /time_debug - диагностика проблем с временем
 /force_monitor - принудительный мониторинг с сбросом времени
 /check_channel @name - проверка конкретного канала
@@ -3433,4 +3434,32 @@ async def cmd_time_debug(message: Message):
         
     except Exception as e:
         logger.error(f"Ошибка диагностики времени: {e}")
+        await message.answer(f"❌ Ошибка: {e}")
+
+@router.message(Command("reset_ids"))
+async def cmd_reset_ids(message: Message):
+    """Сбрасывает только ID сообщений для Telegram каналов"""
+    if not is_admin(message.from_user.id):
+        await message.answer("❌ У вас нет прав доступа.")
+        return
+    
+    try:
+        status_text = "🔄 <b>Сброс ID сообщений</b>\n\n"
+        
+        # Сбрасываем только ID сообщений для Telegram каналов
+        for channel in config.TG_CHANNELS:
+            await db.set_setting(f"last_message_id_tg_{channel}", "")
+            status_text += f"✅ {channel}: ID сброшен\n"
+        
+        status_text += f"\n✅ <b>ID сообщений сброшены!</b>\n\n"
+        status_text += "Теперь при следующей проверке бот будет:\n"
+        status_text += "• Обрабатывать только последние 10 сообщений\n"
+        status_text += "• Не трогать старые посты\n"
+        status_text += "• Начать отслеживание с текущего момента\n\n"
+        status_text += "Используйте /force_monitor для запуска проверки"
+        
+        await message.answer(status_text, parse_mode="HTML")
+        
+    except Exception as e:
+        logger.error(f"Ошибка сброса ID: {e}")
         await message.answer(f"❌ Ошибка: {e}")

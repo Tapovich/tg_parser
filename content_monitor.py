@@ -382,10 +382,20 @@ class ContentMonitor:
             last_message_id = await self._get_last_message_id(f"tg_{channel}")
             logger.info(f"Канал {channel}: последний ID сообщения {last_message_id}")
             
-            # Получаем последние сообщения (больше лимит для надежности)
+            # Определяем лимит сообщений для запроса
+            if last_message_id is None:
+                # При первой проверке берем только последние 20 сообщений
+                limit = 20
+                logger.info(f"Канал {channel}: первая проверка, запрашиваем последние {limit} сообщений")
+            else:
+                # При последующих проверках берем больше для надежности
+                limit = 100
+                logger.info(f"Канал {channel}: последующая проверка, запрашиваем последние {limit} сообщений")
+            
+            # Получаем последние сообщения
             messages = await self.tg_client.get_messages(
                 entity, 
-                limit=100  # Увеличиваем лимит для захвата большего количества сообщений
+                limit=limit
             )
             
             if not messages:
