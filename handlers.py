@@ -6,10 +6,11 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import InlineKeyboardButton
 from aiogram.utils.markdown import html_decoration as html
 from aiogram.exceptions import TelegramBadRequest
-from datetime import datetime
+from datetime import datetime, timedelta
 import html as html_escape
 import logging
 import os
+import aiosqlite
 
 logger = logging.getLogger(__name__)
 
@@ -140,6 +141,10 @@ async def cmd_help(message: Message):
 /remove_tg [@channel] - удалить Telegram-канал
 /list_sources - список всех активных источников
 
+<b>Управление проверками:</b>
+/check_times - показать время последней проверки источников
+/reset_checks - сбросить время проверки (проверить заново все посты)
+
 <b>Как работает бот (ручной режим):</b>
 1. Мониторит указанные источники в реальном времени
 2. Фильтрует контент по ключевым словам
@@ -151,6 +156,11 @@ async def cmd_help(message: Message):
 • ✅ Одобрить - опубликовать пост
 • ✏️ Редактировать - изменить текст
 • ❌ Удалить - отклонить пост
+
+<b>Защита от спама:</b>
+• Автоматическая защита от flood control
+• Уведомления только о новых постах
+• Задержки между отправками сообщений
     """
     
     await message.answer(help_text, parse_mode="HTML")
@@ -2461,9 +2471,10 @@ async def callback_new_post_analysis(callback: CallbackQuery):
         await callback.answer("❌ Пост не найден", show_alert=True)
         return
     
-    # # Получаем детальный анализ
-    # suggestions = chatgpt_rewriter.get_rewrite_suggestions(draft['original_text'])
-    # content_type = chatgpt_rewriter._detect_content_type(draft['original_text'])
+    # Получаем детальный анализ
+    from chatgpt_integration import chatgpt_rewriter
+    suggestions = chatgpt_rewriter.get_rewrite_suggestions(draft['original_text'])
+    content_type = chatgpt_rewriter._detect_content_type(draft['original_text'])
     
     type_names = {
         "news": "📰 Новость",
@@ -2500,6 +2511,7 @@ async def callback_new_post_analysis(callback: CallbackQuery):
     analysis_text += f"📝 <b>Исходный текст:</b>\n<i>{safe_html_with_emoji(draft['original_text'])}</i>\n\n"
     
     # Добавляем промпт для ChatGPT
+    from chatgpt_integration import get_manual_rewrite_prompt
     copyable_prompt = get_manual_rewrite_prompt(draft['original_text'], content_type)
     sparkle_emoji = get_emoji("sparkle")
     analysis_text += f"{sparkle_emoji} <b>Готовый промпт для ChatGPT:</b>\n<code>{copyable_prompt}</code>\n\n"
@@ -2524,8 +2536,9 @@ async def callback_new_post_manual(callback: CallbackQuery):
         return
     
     # Получаем советы и анализ
-    # suggestions = chatgpt_rewriter.get_rewrite_suggestions(draft['original_text'])
-    # content_type = chatgpt_rewriter._detect_content_type(draft['original_text'])
+    from chatgpt_integration import chatgpt_rewriter
+    suggestions = chatgpt_rewriter.get_rewrite_suggestions(draft['original_text'])
+    content_type = chatgpt_rewriter._detect_content_type(draft['original_text'])
     
     type_names = {
         "news": "📰 Новость",
@@ -2545,41 +2558,18 @@ async def callback_new_post_manual(callback: CallbackQuery):
             analysis_text += f"{i}. {suggestion}\n"
         analysis_text += "\n"
     
-    analysis_text += f"📝 <b>Исходный текст:</b>\n<i>{safe_html_with_emoji(draft['original_text'])}</i>"
+    analysis_text += f"📝 <b>Исходный текст:</b>\n<i>{safe_html_with_emoji(draft['original_text'])}</i>\n\n"
     
-    await safe_edit_message(callback, analysis_text, parse_mode="HTML")
-    
-    # Генерируем готовый промпт
+    # Добавляем готовый промпт
+    from chatgpt_integration import get_manual_rewrite_prompt
     copyable_prompt = get_manual_rewrite_prompt(draft['original_text'], content_type)
-    
     sparkle_emoji = get_emoji("sparkle")
-    await callback.bot.send_message(
-        callback.from_user.id,
-        f"{sparkle_emoji} <b>Готовый промпт для ChatGPT</b>\n\n"
-        f"📋 Скопируйте и вставьте в ChatGPT:",
-        parse_mode="HTML"
-    )
+    analysis_text += f"{sparkle_emoji} <b>Готовый промпт для ChatGPT:</b>\n\n<code>{copyable_prompt}</code>\n\n"
+    analysis_text += f"📋 <b>Инструкция:</b>\n1. Скопируйте промпт выше\n2. Вставьте в ChatGPT\n3. Получите перефразированный пост"
     
-    # Отправляем промпт
-    await callback.bot.send_message(
-        callback.from_user.id,
-        f"<code>{copyable_prompt}</code>",
-        parse_mode="HTML"
-    )
-    
-    # Инструкция
-    gift_emoji = get_emoji("gift")
-    await callback.bot.send_message(
-        callback.from_user.id,
-        f"{gift_emoji} <b>Инструкция:</b>\n\n"
-        f"1️⃣ Скопируйте промпт выше\n"
-        f"2️⃣ Откройте ChatGPT\n"  
-        f"3️⃣ Вставьте промпт и получите результат\n"
-        f"4️⃣ Скопируйте готовый пост из ChatGPT\n"
-        f"5️⃣ Используйте /test_post для публикации\n\n"
-        f"📊 ID черновика: #{draft_id}",
-        parse_mode="HTML"
-    )
+    # Оставляем клавиатуру с кнопками
+    from keyboards import get_new_post_keyboard
+    await safe_edit_message(callback, analysis_text, parse_mode="HTML", reply_markup=get_new_post_keyboard(draft_id))
 
 @router.callback_query(F.data.startswith("new_post_details_"))
 async def callback_new_post_details(callback: CallbackQuery):
@@ -2608,14 +2598,24 @@ async def callback_new_post_details(callback: CallbackQuery):
     details_text += f"\n📝 <b>Полный текст:</b>\n<i>{safe_html_with_emoji(draft['original_text'])}</i>\n\n"
     
     # Технический анализ
-    # content_type = chatgpt_rewriter._detect_content_type(draft['original_text'])
-    # suggestions = chatgpt_rewriter.get_rewrite_suggestions(draft['original_text'])
+    from chatgpt_integration import chatgpt_rewriter
+    content_type = chatgpt_rewriter._detect_content_type(draft['original_text'])
+    suggestions = chatgpt_rewriter.get_rewrite_suggestions(draft['original_text'])
     
-    details_text += f"🎯 <b>Тип контента:</b> {content_type}\n"
+    type_names = {
+        "news": "📰 Новость",
+        "update": "🔄 Обновление", 
+        "airdrop": "🎁 Airdrop/Раздача",
+        "analysis": "📊 Аналитика"
+    }
+    
+    details_text += f"🎯 <b>Тип контента:</b> {type_names.get(content_type, '📝 Общий')}\n"
     details_text += f"📊 <b>Символов:</b> {len(draft['original_text'])}\n"
     details_text += f"🔧 <b>Требует улучшений:</b> {len(suggestions)}\n"
     
-    await safe_edit_message(callback, details_text, parse_mode="HTML")
+    # Оставляем клавиатуру с кнопками
+    from keyboards import get_new_post_keyboard
+    await safe_edit_message(callback, details_text, parse_mode="HTML", reply_markup=get_new_post_keyboard(draft_id))
 
 @router.callback_query(F.data.startswith("new_post_skip_"))
 async def callback_new_post_skip(callback: CallbackQuery):
@@ -3069,3 +3069,98 @@ async def cmd_all_stats(message: Message):
     text += f"• Релевантных: {total_tg_matched + total_rss_matched}\n"
     
     await message.answer(text, parse_mode="HTML")
+
+@router.message(Command("reset_checks"))
+async def cmd_reset_checks(message: Message):
+    """Сбрасывает время последней проверки всех источников"""
+    if not is_admin(message.from_user.id):
+        await message.answer("❌ У вас нет прав для выполнения этой команды.")
+        return
+    
+    try:
+        # Получаем все настройки, связанные с проверками
+        async with aiosqlite.connect(db.db_path) as conn:
+            cursor = await conn.execute(
+                'SELECT key FROM settings WHERE key LIKE "last_check_%"'
+            )
+            check_keys = await cursor.fetchall()
+        
+        if not check_keys:
+            await message.answer("ℹ️ Нет сохраненных данных о времени проверки.")
+            return
+        
+        # Сбрасываем все времена проверки
+        reset_time = (datetime.now() - timedelta(hours=24)).isoformat()
+        for (key,) in check_keys:
+            await db.set_setting(key, reset_time)
+        
+        await message.answer(
+            f"✅ Время последней проверки сброшено для {len(check_keys)} источников.\n"
+            f"Теперь бот будет проверять посты за последние 24 часа."
+        )
+        
+    except Exception as e:
+        logger.error(f"Ошибка сброса времени проверки: {e}")
+        await message.answer("❌ Ошибка при сбросе времени проверки.")
+
+@router.message(Command("check_times"))
+async def cmd_check_times(message: Message):
+    """Показывает время последней проверки всех источников"""
+    if not is_admin(message.from_user.id):
+        await message.answer("❌ У вас нет прав для выполнения этой команды.")
+        return
+    
+    try:
+        # Получаем все настройки, связанные с проверками
+        async with aiosqlite.connect(db.db_path) as conn:
+            cursor = await conn.execute(
+                'SELECT key, value FROM settings WHERE key LIKE "last_check_%" ORDER BY key'
+            )
+            check_times = await cursor.fetchall()
+        
+        if not check_times:
+            await message.answer("ℹ️ Нет данных о времени проверки источников.")
+            return
+        
+        # Формируем отчет
+        report = "📊 <b>Время последней проверки источников:</b>\n\n"
+        
+        for key, value in check_times:
+            try:
+                check_time = datetime.fromisoformat(value)
+                time_ago = datetime.now() - check_time
+                
+                # Определяем тип источника
+                if key.startswith("last_check_rss_"):
+                    source_type = "📡 RSS"
+                    source_name = key.replace("last_check_rss_", "")
+                elif key.startswith("last_check_tg_"):
+                    source_type = "💬 Telegram"
+                    source_name = key.replace("last_check_tg_", "")
+                else:
+                    source_type = "❓ Неизвестно"
+                    source_name = key.replace("last_check_", "")
+                
+                # Форматируем время
+                if time_ago.total_seconds() < 60:
+                    time_str = "только что"
+                elif time_ago.total_seconds() < 3600:
+                    minutes = int(time_ago.total_seconds() / 60)
+                    time_str = f"{minutes} мин. назад"
+                elif time_ago.total_seconds() < 86400:
+                    hours = int(time_ago.total_seconds() / 3600)
+                    time_str = f"{hours} ч. назад"
+                else:
+                    days = int(time_ago.total_seconds() / 86400)
+                    time_str = f"{days} дн. назад"
+                
+                report += f"{source_type} <b>{source_name}</b>: {time_str}\n"
+                
+            except Exception as e:
+                report += f"❓ <b>{key}</b>: ошибка парсинга времени\n"
+        
+        await message.answer(report, parse_mode="HTML")
+        
+    except Exception as e:
+        logger.error(f"Ошибка получения времени проверки: {e}")
+        await message.answer("❌ Ошибка при получении времени проверки.")

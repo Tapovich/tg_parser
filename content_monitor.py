@@ -7,6 +7,7 @@ from typing import List, Dict, Optional
 import re
 from bs4 import BeautifulSoup
 import os
+import time
 
 try:
     from telethon import TelegramClient
@@ -38,15 +39,37 @@ class ContentMonitor:
         self.keywords = config.KEYWORDS
         self.last_check = {}
         self.bot_instance = None
+        self.last_notification_time = {}  # Для защиты от flood control
+        self.min_notification_interval = 30  # Минимальный интервал между уведомлениями (секунды)
         
     async def safe_send_message(self, chat_id: int, text: str, parse_mode: str = "HTML"):
-        """Безопасная отправка сообщения"""
-        message_params = {
-            'chat_id': chat_id,
-            'text': text,
-            'parse_mode': parse_mode
-        }
-        await self.bot_instance.send_message(**message_params)
+        """Безопасная отправка сообщения с защитой от flood control"""
+        try:
+            # Проверяем, не слишком ли часто отправляем сообщения
+            current_time = time.time()
+            last_time = self.last_notification_time.get(chat_id, 0)
+            
+            if current_time - last_time < self.min_notification_interval:
+                wait_time = self.min_notification_interval - (current_time - last_time)
+                logger.info(f"Ждем {wait_time:.1f} секунд перед отправкой сообщения пользователю {chat_id}")
+                await asyncio.sleep(wait_time)
+            
+            message_params = {
+                'chat_id': chat_id,
+                'text': text,
+                'parse_mode': parse_mode
+            }
+            await self.bot_instance.send_message(**message_params)
+            
+            # Обновляем время последней отправки
+            self.last_notification_time[chat_id] = time.time()
+            
+        except Exception as e:
+            logger.error(f"Ошибка отправки сообщения пользователю {chat_id}: {e}")
+            # При ошибке flood control ждем дольше
+            if "Flood control" in str(e) or "Too Many Requests" in str(e):
+                logger.warning(f"Flood control для пользователя {chat_id}, ждем 5 минут")
+                self.last_notification_time[chat_id] = time.time() + 300  # 5 минут
         
     def set_bot_instance(self, bot_instance):
         """Устанавливает экземпляр бота для отправки уведомлений"""
@@ -215,7 +238,13 @@ class ContentMonitor:
                 return
             source_name = feed.feed.get('title', rss_url)
             logger.info(f"Обрабатываем RSS: {source_name} ({len(feed.entries)} записей)")
-            last_check_time = self.last_check.get(f"rss_{rss_url}", datetime.now() - timedelta(hours=24))
+            
+            # Получаем время последней проверки из базы данных
+            last_check_time = await self._get_last_check_time(f"rss_{rss_url}")
+            if not last_check_time:
+                # Если нет записи в БД, берем время 24 часа назад
+                last_check_time = datetime.now() - timedelta(hours=24)
+            
             new_entries = 0
             for entry in feed.entries:
                 try:
@@ -224,8 +253,11 @@ class ContentMonitor:
                         pub_date = datetime(*entry.published_parsed[:6])
                     elif hasattr(entry, 'updated_parsed') and entry.updated_parsed:
                         pub_date = datetime(*entry.updated_parsed[:6])
+                    
+                    # Пропускаем старые записи
                     if pub_date and pub_date <= last_check_time:
                         continue
+                    
                     title = entry.get('title', '')
                     description = entry.get('description', '') or entry.get('summary', '')
                     full_text = f"{title}\n\n{description}"
@@ -249,7 +281,9 @@ class ContentMonitor:
                 except Exception as e:
                     logger.error(f"Ошибка обработки RSS записи: {e}")
                     continue
-            self.last_check[f"rss_{rss_url}"] = datetime.now()
+            
+            # Обновляем время последней проверки в БД
+            await self._update_last_check_time(f"rss_{rss_url}")
             logger.info(f"RSS {source_name}: добавлено {new_entries} новых записей")
         except Exception as e:
             logger.error(f"Ошибка обработки RSS {rss_url}: {e}")
@@ -270,7 +304,13 @@ class ContentMonitor:
         """Обрабатывает один Telegram канал"""
         try:
             entity = await self.tg_client.get_entity(channel)
-            last_check_time = self.last_check.get(f"tg_{channel}", datetime.now() - timedelta(hours=24))
+            
+            # Получаем время последней проверки из базы данных
+            last_check_time = await self._get_last_check_time(f"tg_{channel}")
+            if not last_check_time:
+                # Если нет записи в БД, берем время 24 часа назад
+                last_check_time = datetime.now() - timedelta(hours=24)
+            
             messages = await self.tg_client.get_messages(
                 entity, 
                 limit=50,
@@ -282,6 +322,11 @@ class ContentMonitor:
                 try:
                     if not message.text:
                         continue
+                    
+                    # Проверяем, что сообщение действительно новое
+                    if message.date <= last_check_time:
+                        continue
+                    
                     matched_keywords = self.check_keywords(message.text)
                     if matched_keywords:
                         message_url = f"https://t.me/{channel.replace('@', '')}/{message.id}"
@@ -301,10 +346,30 @@ class ContentMonitor:
                 except Exception as e:
                     logger.error(f"Ошибка обработки сообщения: {e}")
                     continue
-            self.last_check[f"tg_{channel}"] = datetime.now()
+            
+            # Обновляем время последней проверки в БД
+            await self._update_last_check_time(f"tg_{channel}")
             logger.info(f"Канал {channel}: добавлено {new_entries} новых записей")
         except Exception as e:
             logger.error(f"Ошибка обработки канала {channel}: {e}")
+    
+    async def _get_last_check_time(self, source_key: str) -> Optional[datetime]:
+        """Получает время последней проверки из базы данных"""
+        try:
+            # Получаем из БД время последней проверки
+            result = await db.get_setting(f"last_check_{source_key}")
+            if result:
+                return datetime.fromisoformat(result)
+        except Exception as e:
+            logger.error(f"Ошибка получения времени последней проверки: {e}")
+        return None
+    
+    async def _update_last_check_time(self, source_key: str):
+        """Обновляет время последней проверки в базе данных"""
+        try:
+            await db.set_setting(f"last_check_{source_key}", datetime.now().isoformat())
+        except Exception as e:
+            logger.error(f"Ошибка обновления времени последней проверки: {e}")
     
     async def run_monitoring_cycle(self):
         """Запускает полный цикл мониторинга"""
@@ -322,7 +387,7 @@ class ContentMonitor:
             await self.close()
 
     async def send_new_post_to_admin(self, bot, admin_id: int, post_data: Dict):
-        """Отправляет новый найденный пост админу с возможностями перефразирования"""
+        """Отправляет новый найденный пост админу с защитой от flood control"""
         try:
             from emoji_config import get_emoji, safe_html_with_emoji
             from keyboards import get_new_post_keyboard
@@ -361,18 +426,24 @@ class ContentMonitor:
                     message_text += f"• {suggestion}\n"
             message_text += f"\n⚡ Выберите действие:"
             
-            # Явно указываем только необходимые параметры
-            message_params = {
-                'chat_id': admin_id,
-                'text': message_text,
-                'parse_mode': "HTML",
-                'reply_markup': get_new_post_keyboard(post_data['id'])
-            }
+            # Создаем клавиатуру с кнопками
+            keyboard = get_new_post_keyboard(post_data['id'])
             
-            # Логируем параметры для отладки
-            logger.debug(f"Отправляем сообщение с параметрами: {list(message_params.keys())}")
+            # Используем безопасную отправку с защитой от flood control
+            await self.safe_send_message(
+                chat_id=admin_id,
+                text=message_text,
+                parse_mode="HTML"
+            )
             
-            await bot.send_message(**message_params)
+            # Отправляем клавиатуру отдельным сообщением
+            await bot.send_message(
+                chat_id=admin_id,
+                text="🎛 <b>Действия с постом:</b>",
+                parse_mode="HTML",
+                reply_markup=keyboard
+            )
+            
             logger.info(f"Новый пост отправлен админу: {post_data['id']}")
         except Exception as e:
             logger.error(f"Ошибка отправки поста админу: {e}")
@@ -381,15 +452,26 @@ class ContentMonitor:
             logger.error(f"Traceback: {traceback.format_exc()}")
 
     async def _notify_admin_about_new_post(self, draft_id: int):
-        """Уведомляет всех админов о новом найденном посте"""
+        """Уведомляет всех админов о новом найденном посте с защитой от flood control"""
         try:
             draft = await db.get_draft_by_id(draft_id)
             if not draft:
                 logger.error(f"Черновик #{draft_id} не найден")
                 return
-            for user_id in ADMIN_USERS:
-                await self.send_new_post_to_admin(self.bot_instance, user_id, draft)
-                logger.info(f"Уведомление о посте #{draft_id} отправлено админу {user_id}")
+            
+            # Отправляем уведомления с задержкой между админами
+            for i, user_id in enumerate(ADMIN_USERS):
+                try:
+                    await self.send_new_post_to_admin(self.bot_instance, user_id, draft)
+                    logger.info(f"Уведомление о посте #{draft_id} отправлено админу {user_id}")
+                    
+                    # Добавляем задержку между отправками для защиты от flood control
+                    if i < len(ADMIN_USERS) - 1:  # Не ждем после последнего админа
+                        await asyncio.sleep(2)  # 2 секунды между уведомлениями
+                        
+                except Exception as e:
+                    logger.error(f"Ошибка отправки уведомления админу {user_id}: {e}")
+                    
         except Exception as e:
             logger.error(f"Ошибка отправки уведомления о посте #{draft_id}: {e}")
 

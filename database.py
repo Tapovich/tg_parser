@@ -139,6 +139,32 @@ class Database:
             
             await db.commit()
     
+    async def get_setting(self, key: str) -> Optional[str]:
+        """Получает значение настройки по ключу"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                cursor = await db.execute(
+                    'SELECT value FROM settings WHERE key = ?',
+                    (key,)
+                )
+                result = await cursor.fetchone()
+                return result[0] if result else None
+        except Exception as e:
+            logger.error(f"Ошибка получения настройки {key}: {e}")
+            return None
+    
+    async def set_setting(self, key: str, value: str):
+        """Устанавливает значение настройки"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute(
+                    'INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)',
+                    (key, value)
+                )
+                await db.commit()
+        except Exception as e:
+            logger.error(f"Ошибка установки настройки {key}: {e}")
+
     async def add_pending_post(self, original_text: str, rewritten_text: str, 
                               source_url: str = None, source_type: str = None) -> int:
         """Добавляет пост на модерацию"""
